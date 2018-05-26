@@ -1,3 +1,3 @@
 # Posterman
 
-A terminal based http request testing protocol!
+A terminal based http request protocol tester!
