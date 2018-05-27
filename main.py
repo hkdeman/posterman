@@ -1,14 +1,28 @@
 import curses
 from curses.textpad import Textbox, rectangle
-import threading
-import time
+import sys
+import string
 
 NUM_LINES = 1
 NUM_COLS = 80
 PADDING = 2
-options = ["▼ GET"]
+TOP,LEFT = 0,0
+options = ["GET","POST","PATCH","DELETE"]
+CTRL_X = 24
+REQUEST_TITLE = "Request"
+RESPONSE_TITLE = "Response"
+ENTER = 10
+
+global_stdscr = None
+last_key_pressed = 0
+
+chosen_option = "▼ "+options[0]
+selected_option = 0
 
 def setup_brand(stdscr):
+    global global_stdscr
+    global_stdscr = stdscr
+
     height,width = stdscr.getmaxyx()
 
     if height<50 or width<75:
@@ -105,39 +119,159 @@ def setup_brand(stdscr):
     for i in range(1,4):
         stdscr.chgat(i, LEFT+R_END_INDEX, 1, curses.A_REVERSE)
 
-def draw_menu(stdscr):
-    chosen_option = options[0]
-    height,width = stdscr.getmaxyx()
+box = None
+edit_box_message = ""
+INIT_CURSES = 0
+edit_box_curses_x = 0
+move_indexes = {"move_to_dropdown":1,"edit_message_box":2,"request":3,"toggle_dropdown":4}
+chosen_move_index = move_indexes["edit_message_box"]
 
-    setup_brand(stdscr)
 
-    TOP = height//5
-    LEFT = width//10
+def move_to_dropdown():
+    global chosen_option,global_stdscr,chosen_move_index,last_key_pressed
+    height,width = global_stdscr.getmaxyx()
+    global_stdscr.chgat(height // 5,width//10,len(chosen_option),curses.A_REVERSE)
+    last_key_pressed = global_stdscr.getch()
+    if last_key_pressed == curses.KEY_RIGHT:
+        chosen_move_index = move_indexes["edit_message_box"]
+    elif last_key_pressed == ENTER:
+        chosen_move_index = move_indexes["toggle_dropdown"]
 
-    stdscr.addstr(TOP,LEFT, chosen_option)
 
-    #NEED TO USE getstr instead in order to keep track of the cursorcd 
+def toggle_dropdown():
+    global global_stdscr,options,last_key_pressed,selected_option,chosen_move_index,chosen_option
+    rectangle(global_stdscr,TOP+3,LEFT-PADDING,TOP+len(options)*PADDING+1,LEFT+4*PADDING)
+    unselected_options = [option for option in options if option!=chosen_option[2:]]
+    for i,option in enumerate(unselected_options):
+        global_stdscr.addstr(TOP+2+PADDING*(i+1),LEFT,option)
+        if selected_option==i:
+            global_stdscr.chgat(TOP+2+PADDING*(i+1),LEFT,len(option),curses.A_REVERSE)
 
-    editwin = curses.newwin(NUM_LINES,NUM_COLS-1,TOP,LEFT+len(chosen_option)+2)
-    rectangle(stdscr,TOP-PADDING,LEFT-PADDING,TOP+PADDING,LEFT+len(chosen_option)+NUM_COLS+PADDING)
-    stdscr.refresh()
+    last_key_pressed = global_stdscr.getch()
+    if last_key_pressed == curses.KEY_DOWN:
+        selected_option +=1
+        if selected_option>2:
+            selected_option=2
+    elif last_key_pressed == curses.KEY_UP:
+        selected_option-=1
+        if selected_option<0:
+            selected_option=0
+            chosen_move_index = move_indexes["move_to_dropdown"]
+    elif last_key_pressed == ENTER:
+        chosen_option = "▼ "+unselected_options[selected_option]
+        selected_option = 0
+        chosen_move_index = move_indexes["move_to_dropdown"]
+
+
+def navigator(keystroke):
+    global edit_box_message,INIT_CURSES,edit_box_curses_x,chosen_move_index,last_key_pressed
+    if keystroke==curses.KEY_LEFT:
+        if edit_box_curses_x==0:
+            chosen_move_index = move_indexes["move_to_dropdown"]
+            last_key_pressed = 7
+            return 7
+        edit_box_curses_x = edit_box_curses_x-1 if edit_box_curses_x>0 else 0
+
+    if keystroke==curses.KEY_RIGHT:
+        if len(edit_box_message)==edit_box_curses_x:
+            chosen_move_index = move_indexes["request"]
+            last_key_pressed = 7
+            return  7
+        edit_box_curses_x = edit_box_curses_x+1 if edit_box_curses_x<INIT_CURSES+NUM_COLS else INIT_CURSES+NUM_COLS
+
+    if keystroke==curses.KEY_BACKSPACE:
+        edit_box_message = edit_box_message[:-1]
+        edit_box_curses_x-=1
+        if len(edit_box_message)==0:
+            edit_box_curses_x=0
+
+    if chr(keystroke).lower() in string.ascii_lowercase or chr(keystroke) in ["/", ":", "."]:
+        edit_box_message+=chr(keystroke)
+        edit_box_curses_x+=1
+    last_key_pressed = keystroke
+    return keystroke
+
+
+def click_request():
+    global_stdscr.clear()
+    while last_key_pressed!=CTRL_X:
+        height,width = global_stdscr.getmaxyx()
+        edit_box_message = edit_box_message[:width - 1]
+        start_x_title = int((width // 2) - (len(edit_box_message) // 2) - len(edit_box_message) % 2)
+        global_stdscr.addstr(height//2, start_x_title, edit_box_message)
+        global_stdscr.refresh()
+
+
+def request():
+    global edit_box_message,last_key_pressed,chosen_move_index
+    global_stdscr.chgat(TOP, LEFT + len(chosen_option) + NUM_COLS + 2*PADDING+1,len(REQUEST_TITLE),curses.A_REVERSE)
+    last_key_pressed = global_stdscr.getch()
+    if last_key_pressed == curses.KEY_LEFT:
+        chosen_move_index = move_indexes["edit_message_box"]
+    elif last_key_pressed == ENTER:
+        click_request()
+
+
+def edit_box():
+    global box,NUM_LINES,NUM_COLS,TOP,LEFT,chosen_option,edit_box_curses_x,edit_box_message
+    if len(edit_box_message)!=0:
+        edit_box_curses_x=len(edit_box_message)
+    editwin = curses.newwin(NUM_LINES, NUM_COLS - 1, TOP, LEFT + len(chosen_option) + 2)
     box = Textbox(editwin)
-    # Let the user edit until Ctrl-G is struck.
-    box.edit()
-    title = box.gather()[:-1]
-    stdscr.clear()
-    k = 0
-    while k!=ord('q'):
-        height,width = stdscr.getmaxyx()
-        title = title[:width - 1]
-        start_x_title = int((width // 2) - (len(title) // 2) - len(title) % 2)
-        stdscr.addstr(height//2, start_x_title, title)
-        stdscr.refresh()
-        k=stdscr.getch()
+    for char in edit_box_message:
+        box.do_command(char)
+    box.edit(navigator)
+
+
+def setup():
+    global last_key_pressed,box,INIT_CURSES,global_stdscr,chosen_option,TOP,LEFT,chosen_move_index,edit_box_message
+    while last_key_pressed!=CTRL_X:
+        global_stdscr.clear()
+        height, width = global_stdscr.getmaxyx()
+        TOP = height // 5
+        LEFT = width // 10
+
+        setup_brand(global_stdscr)
+        INIT_CURSES = LEFT + len(chosen_option) + 2
+
+        #options
+        global_stdscr.addstr(TOP, LEFT, chosen_option)
+
+        #editbox
+        rectangle(global_stdscr, TOP - PADDING, LEFT - PADDING, TOP + PADDING, LEFT + len(chosen_option) + NUM_COLS + PADDING)
+        global_stdscr.addstr(TOP, LEFT + len(chosen_option) + 2,edit_box_message)
+
+        #request button
+        global_stdscr.addstr(TOP, LEFT + len(chosen_option) + 2*PADDING +1 + NUM_COLS,REQUEST_TITLE)
+        rectangle(global_stdscr, TOP - PADDING, LEFT + len(chosen_option) + NUM_COLS + 2*PADDING, TOP + PADDING, LEFT + len(chosen_option)+len(REQUEST_TITLE) + NUM_COLS + 2*PADDING+1)
+
+        #response div
+        global_stdscr.addstr(1, LEFT + len(chosen_option)+len(REQUEST_TITLE) + NUM_COLS + 4*PADDING+1,RESPONSE_TITLE)
+        rectangle(global_stdscr,2, LEFT + len(chosen_option)+len(REQUEST_TITLE) + NUM_COLS + 4*PADDING+1,height-2,width-2)
+
+        global_stdscr.refresh()
+        curses.curs_set(False)
+        if chosen_move_index == move_indexes["move_to_dropdown"]:
+            move_to_dropdown()
+        elif chosen_move_index == move_indexes["request"]:
+            request()
+        elif chosen_move_index == move_indexes["edit_message_box"]:
+            curses.curs_set(True)
+            edit_box()
+        elif chosen_move_index == move_indexes["toggle_dropdown"]:
+            toggle_dropdown()
+
+
+def draw_menu(stdscr):
+    global global_stdscr
+    global_stdscr = stdscr
+    setup()
+
 
 def main():
     curses.wrapper(draw_menu)
-    
+
+
 
 if __name__ == "__main__":
     main()

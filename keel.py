@@ -97,6 +97,8 @@ def draw_menu(stdscr):
         # Wait for next input
         k = stdscr.getch()
 
+
+
 def main():
     curses.wrapper(draw_menu)
 
