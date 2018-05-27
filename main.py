@@ -6,6 +6,8 @@ import requests
 
 NUM_LINES = 1
 NUM_COLS = 80
+POST_REQUEST_NUM_LINES = 5
+POST_REQUEST_NUM_COLS = 80
 PADDING = 2
 TOP,LEFT = 0,0
 options = ["GET","POST","PATCH","DELETE"]
@@ -44,7 +46,12 @@ def setup_brand(stdscr):
     E_END_INDEX = 28
     R_START_INDEX = 30
     R_END_INDEX = 34
-
+    M_START_INDEX = 38
+    M_END_INDEX = 42
+    A_START_INDEX = 44
+    A_END_INDEX = 48
+    N_START_INDEX = 50
+    N_END_INDEX = 54
 
     # Designing P
     for i in range(1, TOP):
@@ -120,6 +127,44 @@ def setup_brand(stdscr):
     for i in range(1,4):
         stdscr.chgat(i, LEFT+R_END_INDEX, 1, curses.A_REVERSE)
 
+
+
+    #Designing M
+
+    for i in range(1,TOP):
+        stdscr.chgat(i,LEFT+M_START_INDEX,1,curses.A_REVERSE)
+
+    for i in range(1,TOP):
+        stdscr.chgat(i,LEFT+M_END_INDEX,1,curses.A_REVERSE)
+
+    for i in range(1,M_END_INDEX-M_START_INDEX):
+        stdscr.chgat(i,LEFT+(M_END_INDEX+M_START_INDEX)//2,1,curses.A_REVERSE)
+
+    #Desinging A
+
+    for i in range(1,TOP):
+        stdscr.chgat(i,LEFT+A_START_INDEX,1,curses.A_REVERSE)
+
+    for i in range(1,TOP):
+        stdscr.chgat(i,LEFT+A_END_INDEX,1,curses.A_REVERSE)
+
+    stdscr.chgat(1,LEFT+A_START_INDEX,A_END_INDEX-A_START_INDEX,curses.A_REVERSE)
+    stdscr.chgat(3,LEFT+A_START_INDEX,A_END_INDEX-A_START_INDEX,curses.A_REVERSE)
+
+
+    #Designing N
+
+    for i in range(1,TOP):
+        stdscr.chgat(i,LEFT+N_START_INDEX,1,curses.A_REVERSE)
+
+    for i in range(1,TOP):
+        stdscr.chgat(i,LEFT+N_END_INDEX,1,curses.A_REVERSE)
+
+    for i in range(1,N_END_INDEX-N_START_INDEX):
+        stdscr.chgat(i,LEFT+N_START_INDEX+i,1,curses.A_REVERSE)
+
+
+
 box = None
 edit_box_message = ""
 INIT_CURSES = 0
@@ -193,6 +238,7 @@ def navigator(keystroke):
     if chr(keystroke).lower() in string.ascii_lowercase or chr(keystroke) in ["/", ":", "."]:
         edit_box_message+=chr(keystroke)
         edit_box_curses_x+=1
+
     last_key_pressed = keystroke
     return keystroke
 
@@ -218,8 +264,10 @@ def click_request():
             chosen_option_stripped = chosen_option[2:]
             if chosen_option_stripped == "GET":
                 response_data = json.dumps(requests.get(edit_box_message).json(),indent=1,sort_keys=True).split("\n")
-            # elif chosen_option_stripped == "POST":
-            #     response_data = json.dumps(requests.get(edit_box_message).json(),indent=1,sort_keys=True).split("\n")
+            elif chosen_option_stripped == "POST":
+                headers = {'content-type': 'application/json'}
+                payload = {'some': 'data'}
+                response_data = json.dumps(requests.post(edit_box_message, data=json.dumps(payload), headers=headers).json(),indent=1,sort_keys=True).split("\n")
             # elif chosen_option_stripped == "PATCH":
             #     response_data = json.dumps(requests.get(edit_box_message).json(),indent=1,sort_keys=True).split("\n")
             # elif chosen_option_stripped == "DELETE":
@@ -279,20 +327,25 @@ def setup():
         setup_brand(global_stdscr)
         INIT_CURSES = LEFT + len(chosen_option) + 2
 
-        #options
+        # options
         global_stdscr.addstr(TOP, LEFT, chosen_option)
 
-        #editbox
+        # editbox
         rectangle(global_stdscr, TOP - PADDING, LEFT - PADDING, TOP + PADDING, LEFT + len(chosen_option) + NUM_COLS + PADDING)
         global_stdscr.addstr(TOP, LEFT + len(chosen_option) + 2,edit_box_message)
 
-        #request button
+        # request button
         global_stdscr.addstr(TOP, LEFT + len(chosen_option) + 2*PADDING +1 + NUM_COLS,REQUEST_TITLE)
         rectangle(global_stdscr, TOP - PADDING, LEFT + len(chosen_option) + NUM_COLS + 2*PADDING, TOP + PADDING, LEFT + len(chosen_option)+len(REQUEST_TITLE) + NUM_COLS + 2*PADDING+1)
 
-        #response div
+        # response div
         global_stdscr.addstr(1, LEFT + len(chosen_option)+len(REQUEST_TITLE) + NUM_COLS + 4*PADDING+1,RESPONSE_TITLE)
         rectangle(global_stdscr,2, LEFT + len(chosen_option)+len(REQUEST_TITLE) + NUM_COLS + 4*PADDING+1,height-2,width-2)
+
+        if chosen_option[2:] == "POST":
+            # request post div extra data
+            rectangle(global_stdscr, TOP + 2*PADDING, LEFT+PADDING+len(chosen_option), TOP + POST_REQUEST_NUM_LINES+2*PADDING, LEFT+PADDING+POST_REQUEST_NUM_COLS)
+            global_stdscr.addstr(TOP+PADDING+1, LEFT + len(chosen_option) +PADDING, "Body (data)")
 
         global_stdscr.refresh()
         curses.curs_set(False)
