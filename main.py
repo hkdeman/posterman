@@ -1,7 +1,8 @@
 import curses
 from curses.textpad import Textbox, rectangle
-import sys
 import string
+import json
+import requests
 
 NUM_LINES = 1
 NUM_COLS = 80
@@ -123,7 +124,7 @@ box = None
 edit_box_message = ""
 INIT_CURSES = 0
 edit_box_curses_x = 0
-move_indexes = {"move_to_dropdown":1,"edit_message_box":2,"request":3,"toggle_dropdown":4}
+move_indexes = {"move_to_dropdown":1,"edit_message_box":2,"request":3,"toggle_dropdown":4,"click_request":5}
 chosen_move_index = move_indexes["edit_message_box"]
 
 
@@ -192,15 +193,17 @@ def navigator(keystroke):
     return keystroke
 
 
+response_data = None
 def click_request():
-    global_stdscr.clear()
-    while last_key_pressed!=CTRL_X:
-        height,width = global_stdscr.getmaxyx()
-        edit_box_message = edit_box_message[:width - 1]
-        start_x_title = int((width // 2) - (len(edit_box_message) // 2) - len(edit_box_message) % 2)
-        global_stdscr.addstr(height//2, start_x_title, edit_box_message)
-        global_stdscr.refresh()
-
+    global response_data,last_key_pressed,edit_box_message
+    # populate response div
+    height,width = global_stdscr.getmaxyx()
+    if not response_data:
+        response_data = json.dumps(requests.get(edit_box_message).json(),indent=1,sort_keys=True).split("\n")
+    for i in range(height-3):
+        if i<len(response_data):
+            global_stdscr.addstr(3+i, LEFT + len(chosen_option) + len(REQUEST_TITLE) + NUM_COLS + 4 * PADDING + 2,response_data[i])
+    last_key_pressed = global_stdscr.getch()
 
 def request():
     global edit_box_message,last_key_pressed,chosen_move_index
@@ -209,8 +212,7 @@ def request():
     if last_key_pressed == curses.KEY_LEFT:
         chosen_move_index = move_indexes["edit_message_box"]
     elif last_key_pressed == ENTER:
-        click_request()
-
+        chosen_move_index = move_indexes["click_request"]
 
 def edit_box():
     global box,NUM_LINES,NUM_COLS,TOP,LEFT,chosen_option,edit_box_curses_x,edit_box_message
@@ -260,6 +262,8 @@ def setup():
             edit_box()
         elif chosen_move_index == move_indexes["toggle_dropdown"]:
             toggle_dropdown()
+        elif chosen_move_index == move_indexes["click_request"]:
+            click_request()
 
 
 def draw_menu(stdscr):
