@@ -166,6 +166,10 @@ def toggle_dropdown():
 
 def navigator(keystroke):
     global edit_box_message,INIT_CURSES,edit_box_curses_x,chosen_move_index,last_key_pressed
+    if keystroke == CTRL_X:
+        last_key_pressed = keystroke
+        return 7
+
     if keystroke==curses.KEY_LEFT:
         if edit_box_curses_x==0:
             chosen_move_index = move_indexes["move_to_dropdown"]
@@ -194,16 +198,53 @@ def navigator(keystroke):
 
 
 response_data = None
-def click_request():
-    global response_data,last_key_pressed,edit_box_message
-    # populate response div
-    height,width = global_stdscr.getmaxyx()
-    if not response_data:
-        response_data = json.dumps(requests.get(edit_box_message).json(),indent=1,sort_keys=True).split("\n")
+response_data_url = None
+response_data_cursor_x = 0
+def format_data(response_data, height):
+    global response_data_cursor_x
     for i in range(height-3):
         if i<len(response_data):
             global_stdscr.addstr(3+i, LEFT + len(chosen_option) + len(REQUEST_TITLE) + NUM_COLS + 4 * PADDING + 2,response_data[i])
+            if i==response_data_cursor_x:
+                global_stdscr.chgat(3+i,LEFT + len(chosen_option) + len(REQUEST_TITLE) + NUM_COLS + 4 * PADDING + 2,len(response_data[i]),curses.A_REVERSE)
+
+
+def click_request():
+    global response_data,last_key_pressed,edit_box_message,response_data_cursor_x,chosen_move_index,response_data_url
+    # populate response div
+    height,width = global_stdscr.getmaxyx()
+    if not response_data or (response_data!=None and edit_box_message!=response_data_url):
+        try:
+            chosen_option_stripped = chosen_option[2:]
+            if chosen_option_stripped == "GET":
+                response_data = json.dumps(requests.get(edit_box_message).json(),indent=1,sort_keys=True).split("\n")
+            # elif chosen_option_stripped == "POST":
+            #     response_data = json.dumps(requests.get(edit_box_message).json(),indent=1,sort_keys=True).split("\n")
+            # elif chosen_option_stripped == "PATCH":
+            #     response_data = json.dumps(requests.get(edit_box_message).json(),indent=1,sort_keys=True).split("\n")
+            # elif chosen_option_stripped == "DELETE":
+            #     response_data = json.dumps(requests.get(edit_box_message).json(),indent=1,sort_keys=True).split("\n")
+            format_data(response_data, height)
+        except:
+            format_data(["There was an error processing the url..."],height)
+    else:
+        format_data(response_data, height)
+
+    response_data_url = edit_box_message
     last_key_pressed = global_stdscr.getch()
+    if last_key_pressed == curses.KEY_LEFT:
+        chosen_move_index = move_indexes["request"]
+    elif last_key_pressed == curses.KEY_DOWN:
+        response_data_cursor_x +=1
+        if response_data_cursor_x>height-3:
+            response_data_cursor_x = height - 3
+        elif response_data_cursor_x>len(response_data)-1:
+            response_data_cursor_x = len(response_data)-1
+    elif last_key_pressed == curses.KEY_UP:
+        response_data_cursor_x -=1
+        if response_data_cursor_x < 0 :
+            response_data_cursor_x=0
+
 
 def request():
     global edit_box_message,last_key_pressed,chosen_move_index
@@ -213,6 +254,7 @@ def request():
         chosen_move_index = move_indexes["edit_message_box"]
     elif last_key_pressed == ENTER:
         chosen_move_index = move_indexes["click_request"]
+
 
 def edit_box():
     global box,NUM_LINES,NUM_COLS,TOP,LEFT,chosen_option,edit_box_curses_x,edit_box_message
@@ -227,6 +269,7 @@ def edit_box():
 
 def setup():
     global last_key_pressed,box,INIT_CURSES,global_stdscr,chosen_option,TOP,LEFT,chosen_move_index,edit_box_message
+
     while last_key_pressed!=CTRL_X:
         global_stdscr.clear()
         height, width = global_stdscr.getmaxyx()
@@ -274,7 +317,6 @@ def draw_menu(stdscr):
 
 def main():
     curses.wrapper(draw_menu)
-
 
 
 if __name__ == "__main__":
