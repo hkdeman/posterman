@@ -2,7 +2,7 @@ import curses
 from curses.textpad import Textbox, rectangle
 import string
 import json
-import requests
+import requests,urllib
 
 NUM_LINES = 1
 NUM_COLS = 80
@@ -16,12 +16,20 @@ CTRL_D = 4
 REQUEST_TITLE = "Request"
 RESPONSE_TITLE = "Response"
 ENTER = 10
-
 global_stdscr = None
 last_key_pressed = 0
-
 chosen_option = "▼ "+options[0]
 selected_option = 0
+box = None
+edit_box_message = ""
+INIT_CURSES = 0
+move_indexes = {"move_to_dropdown":1,"edit_message_box":2,"request":3,"toggle_dropdown":4,"click_request":5,"add_key_value_pair_below":6}
+chosen_move_index = move_indexes["edit_message_box"]
+post_request_body_boxes = []
+PLUS_POS_Y = 1
+selected_box = -1
+key_or_val_selector = "key"
+
 
 def setup_brand(stdscr):
     global global_stdscr
@@ -165,19 +173,6 @@ def setup_brand(stdscr):
         stdscr.chgat(i,LEFT+N_START_INDEX+i,1,curses.A_REVERSE)
 
 
-
-box = None
-edit_box_message = ""
-INIT_CURSES = 0
-edit_box_curses_x = 0
-move_indexes = {"move_to_dropdown":1,"edit_message_box":2,"request":3,"toggle_dropdown":4,"click_request":5,"add_key_value_pair_below":6}
-chosen_move_index = move_indexes["edit_message_box"]
-post_request_body_boxes = []
-PLUS_POS_Y = 1
-selected_box = -1
-key_or_val_selector = "key"
-
-
 def move_to_dropdown():
     global chosen_option,global_stdscr,chosen_move_index,last_key_pressed
     height,width = global_stdscr.getmaxyx()
@@ -190,7 +185,7 @@ def move_to_dropdown():
 
 
 def toggle_dropdown():
-    global global_stdscr,options,last_key_pressed,selected_option,chosen_move_index,chosen_option
+    global global_stdscr,options,last_key_pressed,selected_option,chosen_move_index,chosen_option,post_request_body_boxes,PLUS_POS_Y
     rectangle(global_stdscr,TOP+3,LEFT-PADDING,TOP+len(options)*PADDING+1,LEFT+4*PADDING)
     unselected_options = [option for option in options if option!=chosen_option[2:]]
     for i,option in enumerate(unselected_options):
@@ -212,39 +207,32 @@ def toggle_dropdown():
         chosen_option = "▼ "+unselected_options[selected_option]
         selected_option = 0
         chosen_move_index = move_indexes["move_to_dropdown"]
-
+        post_request_body_boxes = []
+        PLUS_POS_Y = 1
 
 def navigator(keystroke):
-    global edit_box_message,INIT_CURSES,edit_box_curses_x,chosen_move_index,last_key_pressed
+    global edit_box_message,INIT_CURSES,chosen_move_index,last_key_pressed
     if keystroke == CTRL_X:
         last_key_pressed = keystroke
         return 7
 
     if keystroke==curses.KEY_LEFT:
-        if edit_box_curses_x==0:
-            chosen_move_index = move_indexes["move_to_dropdown"]
-            last_key_pressed = 7
-            return 7
-        edit_box_curses_x = edit_box_curses_x-1 if edit_box_curses_x>0 else 0
+        chosen_move_index = move_indexes["move_to_dropdown"]
+        last_key_pressed = 7
+        return 7
 
     if keystroke==curses.KEY_RIGHT:
-        if len(edit_box_message)==edit_box_curses_x:
-            chosen_move_index = move_indexes["request"]
-            last_key_pressed = 7
-            return  7
-        edit_box_curses_x = edit_box_curses_x+1 if edit_box_curses_x<INIT_CURSES+NUM_COLS else INIT_CURSES+NUM_COLS
+        chosen_move_index = move_indexes["request"]
+        last_key_pressed = 7
+        return  7
 
     if keystroke==curses.KEY_BACKSPACE:
         edit_box_message = edit_box_message[:-1]
-        edit_box_curses_x-=1
-        if len(edit_box_message)==0:
-            edit_box_curses_x=0
 
-    if chr(keystroke).lower() in string.ascii_lowercase or chr(keystroke) in ["/", ":", "."]:
+    if chr(keystroke).lower() in string.ascii_lowercase or chr(keystroke) in ["/", ":", ".","?","=","&"]:
         edit_box_message+=chr(keystroke)
-        edit_box_curses_x+=1
 
-    if keystroke == curses.KEY_DOWN and chosen_option[2:]=="POST":
+    if keystroke == curses.KEY_DOWN and (chosen_option[2:]=="POST" or chosen_option[2:] == "GET"):
         chosen_move_index = move_indexes["add_key_value_pair_below"]
         return 7
 
@@ -254,57 +242,70 @@ def navigator(keystroke):
 
 response_data = None
 response_data_url = None
-response_data_cursor_x = 0
-def format_data(response_data, height):
-    global response_data_cursor_x
-    for i in range(height-3):
+response_data_cursor_y = 0
+start_index_response_data = None
+end_index_response_data = None
+def format_data(response_data, height, width):
+    global response_data_cursor_y,start_index_response_data,end_index_response_data
+    response_data = response_data[start_index_response_data:end_index_response_data]
+    allowed_width = width-3 - (LEFT + len(chosen_option)+len(REQUEST_TITLE) + NUM_COLS + 4*PADDING+1)
+    for i in range(end_index_response_data):
         if i<len(response_data):
-            global_stdscr.addstr(3+i, LEFT + len(chosen_option) + len(REQUEST_TITLE) + NUM_COLS + 4 * PADDING + 2,response_data[i])
-            if i==response_data_cursor_x:
-                global_stdscr.chgat(3+i,LEFT + len(chosen_option) + len(REQUEST_TITLE) + NUM_COLS + 4 * PADDING + 2,len(response_data[i]),curses.A_REVERSE)
+            global_stdscr.addstr(3+i, LEFT + len(chosen_option) + len(REQUEST_TITLE) + NUM_COLS + 4 * PADDING + 2,response_data[i][:allowed_width])
+            if i==response_data_cursor_y-start_index_response_data and chosen_move_index == move_indexes["click_request"]:
+                global_stdscr.chgat(3+i,LEFT + len(chosen_option) + len(REQUEST_TITLE) + NUM_COLS + 4 * PADDING + 2,len(response_data[i][:allowed_width]),curses.A_REVERSE)
 
 
 def click_request():
-    global response_data,last_key_pressed,edit_box_message,response_data_cursor_x,chosen_move_index,response_data_url,global_stdscr
+    global response_data,last_key_pressed,edit_box_message,response_data_cursor_y,chosen_move_index,response_data_url,global_stdscr
+    global start_index_response_data,end_index_response_data
     # populate response div
     height,width = global_stdscr.getmaxyx()
     if not response_data or (response_data!=None and edit_box_message!=response_data_url):
         try:
             chosen_option_stripped = chosen_option[2:]
             if chosen_option_stripped == "GET":
-                response_data = json.dumps(requests.get(edit_box_message).json(),indent=1,sort_keys=True).split("\n")
+                payload = {}
+                for box in post_request_body_boxes:
+                    if box["key"] != "" and box["value"] != "":
+                        payload[box["key"]] = box["value"]
+                payload = urllib.parse.urlencode(payload)
+                response_data = json.dumps(requests.get(edit_box_message+"?"+payload).json(),indent=1,sort_keys=True).split("\n")
             elif chosen_option_stripped == "POST":
                 headers = {'content-type': 'application/json'}
                 payload = {}
                 for box in post_request_body_boxes:
                     if box["key"] != "" and box["value"]!="":
-                        payload[box["key"]] = box["value"]
-                payload = [{box["key"]: box["value"]} for box in post_request_body_boxes]
+                            payload[box["key"]] = box["value"]
                 response_data = json.dumps(requests.post(edit_box_message, data=json.dumps(payload), headers=headers).json(),indent=1,sort_keys=True).split("\n")
             # elif chosen_option_stripped == "PATCH":
             #     response_data = json.dumps(requests.get(edit_box_message).json(),indent=1,sort_keys=True).split("\n")
             # elif chosen_option_stripped == "DELETE":
             #     response_data = json.dumps(requests.get(edit_box_message).json(),indent=1,sort_keys=True).split("\n")
-            format_data(response_data, height)
+            format_data(response_data, height, width)
         except:
-            format_data(["There was an error processing the url..."],height)
+            format_data(["There was an error processing the url..."],height, width)
     else:
-        format_data(response_data, height)
+        format_data(response_data, height, width)
 
     response_data_url = edit_box_message
     last_key_pressed = global_stdscr.getch()
     if last_key_pressed == curses.KEY_LEFT:
         chosen_move_index = move_indexes["request"]
     elif last_key_pressed == curses.KEY_DOWN:
-        response_data_cursor_x +=1
-        if response_data_cursor_x>height-3:
-            response_data_cursor_x = height - 3
-        elif response_data_cursor_x>len(response_data)-1:
-            response_data_cursor_x = len(response_data)-1
+        response_data_cursor_y += 1
+        if response_data_cursor_y > len(response_data)-1:
+           response_data_cursor_y = len(response_data)-1
+        elif response_data_cursor_y>=end_index_response_data:
+            start_index_response_data+=1
+            end_index_response_data+=1
     elif last_key_pressed == curses.KEY_UP:
-        response_data_cursor_x -=1
-        if response_data_cursor_x < 0 :
-            response_data_cursor_x=0
+        response_data_cursor_y -=1
+        if response_data_cursor_y <start_index_response_data and start_index_response_data > 0:
+            start_index_response_data-=1
+            end_index_response_data-=1
+        if response_data_cursor_y < 0:
+            response_data_cursor_y=0
 
 
 def request():
@@ -315,12 +316,13 @@ def request():
         chosen_move_index = move_indexes["edit_message_box"]
     elif last_key_pressed == ENTER:
         chosen_move_index = move_indexes["click_request"]
+    elif last_key_pressed == curses.KEY_RIGHT:
+        if response_data:
+            chosen_move_index = move_indexes["click_request"]
 
 
 def edit_box():
-    global box,NUM_LINES,NUM_COLS,TOP,LEFT,chosen_option,edit_box_curses_x,edit_box_message
-    if len(edit_box_message)!=0:
-        edit_box_curses_x=len(edit_box_message)
+    global box,NUM_LINES,NUM_COLS,TOP,LEFT,chosen_option,edit_box_message
     editwin = curses.newwin(NUM_LINES, NUM_COLS - 1, TOP, LEFT + len(chosen_option) + 2)
     box = Textbox(editwin)
     for char in edit_box_message:
@@ -388,9 +390,11 @@ def update_key_value_table():
         global_stdscr.addstr(box["value_box"]["y"], box["value_box"]["x"],box["value"])
 
         if i == 0:
-            global_stdscr.addstr(TOP+POST_REQUEST_NUM_LINES-1,LEFT+2*PADDING,"Key")
-            global_stdscr.addstr(TOP+POST_REQUEST_NUM_LINES-1,LEFT+NUM_COLS//2 + 4*PADDING,"Value")
-
+            if chosen_option[2:] == "POST":
+                global_stdscr.addstr(TOP+POST_REQUEST_NUM_LINES-1,LEFT+2*PADDING,"Key")
+                global_stdscr.addstr(TOP+POST_REQUEST_NUM_LINES-1,LEFT+NUM_COLS//2 + 4*PADDING,"Value")
+            elif chosen_option[2:] == "GET":
+                global_stdscr.addstr(TOP + POST_REQUEST_NUM_LINES - 1, LEFT + 2 * PADDING, "Parameters")
         global_stdscr.refresh()
 
 
@@ -459,12 +463,15 @@ def setup():
         global_stdscr.addstr(1, LEFT + len(chosen_option)+len(REQUEST_TITLE) + NUM_COLS + 4*PADDING+1,RESPONSE_TITLE)
         rectangle(global_stdscr,2, LEFT + len(chosen_option)+len(REQUEST_TITLE) + NUM_COLS + 4*PADDING+1,height-2,width-2)
 
-        if chosen_option[2:] == "POST":
+        if chosen_option[2:] == "POST"  or chosen_option[2:] == "GET":
             # request post div extra data
             global_stdscr.addstr(TOP + POST_REQUEST_NUM_LINES-1 + PLUS_POS_Y, LEFT+POST_REQUEST_NUM_COLS+2*PADDING, "+")
             rectangle(global_stdscr,TOP+POST_REQUEST_NUM_LINES-PADDING + PLUS_POS_Y,
                       LEFT+POST_REQUEST_NUM_COLS+PADDING,TOP+POST_REQUEST_NUM_LINES+PLUS_POS_Y,LEFT+POST_REQUEST_NUM_COLS+3*PADDING)
             update_key_value_table()
+
+        if response_data:
+            format_data(response_data, height, width)
 
         global_stdscr.refresh()
         curses.curs_set(False)
@@ -484,8 +491,13 @@ def setup():
 
 
 def draw_menu(stdscr):
-    global global_stdscr
+    global global_stdscr,start_index_response_data,end_index_response_data,NUM_COLS,POST_REQUEST_NUM_COLS
     global_stdscr = stdscr
+    height,width = stdscr.getmaxyx()
+    start_index_response_data = 0
+    end_index_response_data = height-5
+    NUM_COLS = width//3
+    POST_REQUEST_NUM_COLS = NUM_COLS
     setup()
 
 
