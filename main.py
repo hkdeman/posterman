@@ -12,6 +12,7 @@ PADDING = 2
 TOP,LEFT = 0,0
 options = ["GET","POST","PATCH","DELETE"]
 CTRL_X = 24
+CTRL_D = 4
 REQUEST_TITLE = "Request"
 RESPONSE_TITLE = "Response"
 ENTER = 10
@@ -169,8 +170,12 @@ box = None
 edit_box_message = ""
 INIT_CURSES = 0
 edit_box_curses_x = 0
-move_indexes = {"move_to_dropdown":1,"edit_message_box":2,"request":3,"toggle_dropdown":4,"click_request":5}
+move_indexes = {"move_to_dropdown":1,"edit_message_box":2,"request":3,"toggle_dropdown":4,"click_request":5,"add_key_value_pair_below":6}
 chosen_move_index = move_indexes["edit_message_box"]
+post_request_body_boxes = []
+PLUS_POS_Y = 1
+selected_box = -1
+key_or_val_selector = "key"
 
 
 def move_to_dropdown():
@@ -239,6 +244,10 @@ def navigator(keystroke):
         edit_box_message+=chr(keystroke)
         edit_box_curses_x+=1
 
+    if keystroke == curses.KEY_DOWN and chosen_option[2:]=="POST":
+        chosen_move_index = move_indexes["add_key_value_pair_below"]
+        return 7
+
     last_key_pressed = keystroke
     return keystroke
 
@@ -256,7 +265,7 @@ def format_data(response_data, height):
 
 
 def click_request():
-    global response_data,last_key_pressed,edit_box_message,response_data_cursor_x,chosen_move_index,response_data_url
+    global response_data,last_key_pressed,edit_box_message,response_data_cursor_x,chosen_move_index,response_data_url,global_stdscr
     # populate response div
     height,width = global_stdscr.getmaxyx()
     if not response_data or (response_data!=None and edit_box_message!=response_data_url):
@@ -266,7 +275,11 @@ def click_request():
                 response_data = json.dumps(requests.get(edit_box_message).json(),indent=1,sort_keys=True).split("\n")
             elif chosen_option_stripped == "POST":
                 headers = {'content-type': 'application/json'}
-                payload = {'some': 'data'}
+                payload = {}
+                for box in post_request_body_boxes:
+                    if box["key"] != "" and box["value"]!="":
+                        payload[box["key"]] = box["value"]
+                payload = [{box["key"]: box["value"]} for box in post_request_body_boxes]
                 response_data = json.dumps(requests.post(edit_box_message, data=json.dumps(payload), headers=headers).json(),indent=1,sort_keys=True).split("\n")
             # elif chosen_option_stripped == "PATCH":
             #     response_data = json.dumps(requests.get(edit_box_message).json(),indent=1,sort_keys=True).split("\n")
@@ -315,8 +328,112 @@ def edit_box():
     box.edit(navigator)
 
 
+
+def post_navigator(keystroke):
+    global last_key_pressed,post_request_body_boxes,selected_box,chosen_move_index,key_or_val_selector
+    last_key_pressed = keystroke
+    with open("filename.txt","w") as f:
+        f.write(str(selected_box))
+    if keystroke == CTRL_X:
+        last_key_pressed = keystroke
+        return 7
+    elif keystroke == curses.KEY_UP:
+        if selected_box == 0:
+            chosen_move_index = move_indexes["edit_message_box"]
+        return 7
+    elif keystroke == curses.KEY_DOWN:
+        if selected_box==len(post_request_body_boxes)-1:
+            selected_box=len(post_request_body_boxes)
+        else:
+            selected_box = selected_box+1 if selected_box < len(post_request_body_boxes) else len(post_request_body_boxes)
+        return  7
+    elif keystroke == curses.KEY_RIGHT:
+        key_or_val_selector = "value"
+        return 7
+    elif keystroke == curses.KEY_LEFT:
+        key_or_val_selector = "key"
+        return 7
+    elif keystroke==curses.KEY_BACKSPACE:
+        post_request_body_boxes[selected_box][key_or_val_selector] = post_request_body_boxes[selected_box][key_or_val_selector][:-1]
+        post_request_body_boxes[selected_box][key_or_val_selector+"_box"]["cursor"]-=1
+        if len(post_request_body_boxes[selected_box][key_or_val_selector])==0:
+            post_request_body_boxes[selected_box][key_or_val_selector + "_box"]["cursor"]=0
+
+    # could add ctrl_d to delete the cell for more user friendly experience
+
+    if chr(keystroke).lower() in string.ascii_lowercase:
+        post_request_body_boxes[selected_box][key_or_val_selector]+=chr(keystroke)
+        post_request_body_boxes[selected_box][key_or_val_selector + "_box"]["cursor"]+=1
+
+    return keystroke
+
+
+def update_key_value_table():
+    global global_stdscr,post_request_body_boxes
+    global PLUS_POS_Y
+
+    PLUS_POS_Y = 1
+    for i,box in enumerate(post_request_body_boxes):
+
+        rectangle(global_stdscr, TOP+POST_REQUEST_NUM_LINES+i*2*PADDING,
+                  LEFT+PADDING, TOP+POST_REQUEST_NUM_LINES+PADDING+i*2*PADDING,
+                  LEFT + NUM_COLS//2 -1 + 3 * PADDING)
+
+        rectangle(global_stdscr, TOP + POST_REQUEST_NUM_LINES+i*2*PADDING,
+                  LEFT + NUM_COLS // 2 +3*PADDING, TOP + POST_REQUEST_NUM_LINES+PADDING+i*2*PADDING,
+                  LEFT + NUM_COLS + 3 * PADDING)
+        PLUS_POS_Y+=4
+
+        global_stdscr.addstr(box["key_box"]["y"],box["key_box"]["x"],box["key"])
+        global_stdscr.addstr(box["value_box"]["y"], box["value_box"]["x"],box["value"])
+
+        if i == 0:
+            global_stdscr.addstr(TOP+POST_REQUEST_NUM_LINES-1,LEFT+2*PADDING,"Key")
+            global_stdscr.addstr(TOP+POST_REQUEST_NUM_LINES-1,LEFT+NUM_COLS//2 + 4*PADDING,"Value")
+
+        global_stdscr.refresh()
+
+
+def add_key_value_pair_below():
+    global global_stdscr,last_key_pressed,post_request_body_boxes,PLUS_POS_Y,selected_box,chosen_move_index
+    if len(post_request_body_boxes) == 0 or selected_box==len(post_request_body_boxes):
+        global_stdscr.chgat(TOP + POST_REQUEST_NUM_LINES - 1 + PLUS_POS_Y, LEFT + POST_REQUEST_NUM_COLS + 2 * PADDING, 1,curses.A_REVERSE)
+
+    update_key_value_table()
+
+    if selected_box != -1 and selected_box != len(post_request_body_boxes):
+        curses.curs_set(True)
+        post_request_body_boxes[selected_box][key_or_val_selector+"_box"]["box"].edit(post_navigator)
+    elif selected_box== -1 or len(post_request_body_boxes)==selected_box:
+        last_key_pressed = global_stdscr.getch()
+
+
+    if last_key_pressed == ENTER:
+        key_editwin = curses.newwin(NUM_LINES, NUM_COLS // 2 - 2,
+                                    TOP + POST_REQUEST_NUM_LINES + len(post_request_body_boxes) * 2 * PADDING+1,
+                                    LEFT + PADDING + 1)
+        key_box = Textbox(key_editwin)
+        value_editwin = curses.newwin(NUM_LINES, NUM_COLS // 2 - 2,
+                                    TOP + POST_REQUEST_NUM_LINES + len(post_request_body_boxes) * 2 * PADDING+1,
+                                    LEFT + 3*PADDING + NUM_COLS//2 +1)
+        value_box = Textbox(value_editwin)
+        selected_box = len(post_request_body_boxes)
+        post_request_body_boxes.append({"key":"","value":"","key_box":
+                                        {"box":key_box,"x":LEFT + PADDING + 1,
+                                         "y":TOP + POST_REQUEST_NUM_LINES+len(post_request_body_boxes)*2*PADDING+1,
+                                         "cursor":0},
+                                        "value_box":{"box":value_box,"x":LEFT + PADDING + NUM_COLS//2 + 1 + 2*PADDING,
+                                                     "y":TOP + POST_REQUEST_NUM_LINES+len(post_request_body_boxes)*2*PADDING+1,
+                                                     "cursor":0}})
+        PLUS_POS_Y+=4
+    elif last_key_pressed == curses.KEY_UP:
+        if selected_box==-1:
+            chosen_move_index = move_indexes["edit_message_box"]
+        else:
+            selected_box = selected_box-1 if selected_box>0 else 0
+
 def setup():
-    global last_key_pressed,box,INIT_CURSES,global_stdscr,chosen_option,TOP,LEFT,chosen_move_index,edit_box_message
+    global last_key_pressed,box,INIT_CURSES,global_stdscr,chosen_option,TOP,LEFT,chosen_move_index,edit_box_message,PLUS_POS_Y
 
     while last_key_pressed!=CTRL_X:
         global_stdscr.clear()
@@ -344,8 +461,10 @@ def setup():
 
         if chosen_option[2:] == "POST":
             # request post div extra data
-            rectangle(global_stdscr, TOP + 2*PADDING, LEFT+PADDING+len(chosen_option), TOP + POST_REQUEST_NUM_LINES+2*PADDING, LEFT+PADDING+POST_REQUEST_NUM_COLS)
-            global_stdscr.addstr(TOP+PADDING+1, LEFT + len(chosen_option) +PADDING, "Body (data)")
+            global_stdscr.addstr(TOP + POST_REQUEST_NUM_LINES-1 + PLUS_POS_Y, LEFT+POST_REQUEST_NUM_COLS+2*PADDING, "+")
+            rectangle(global_stdscr,TOP+POST_REQUEST_NUM_LINES-PADDING + PLUS_POS_Y,
+                      LEFT+POST_REQUEST_NUM_COLS+PADDING,TOP+POST_REQUEST_NUM_LINES+PLUS_POS_Y,LEFT+POST_REQUEST_NUM_COLS+3*PADDING)
+            update_key_value_table()
 
         global_stdscr.refresh()
         curses.curs_set(False)
@@ -360,6 +479,8 @@ def setup():
             toggle_dropdown()
         elif chosen_move_index == move_indexes["click_request"]:
             click_request()
+        elif chosen_move_index == move_indexes["add_key_value_pair_below"]:
+            add_key_value_pair_below()
 
 
 def draw_menu(stdscr):
