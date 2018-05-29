@@ -270,7 +270,9 @@ def click_request():
                     if box["key"] != "" and box["value"] != "":
                         payload[box["key"]] = box["value"]
                 payload = urllib.parse.urlencode(payload)
-                response_data = json.dumps(requests.get(edit_box_message+"?"+payload).json(),indent=1,sort_keys=True).split("\n")
+                if payload != "":
+                    payload="?"+payload
+                response_data = json.dumps(requests.get(edit_box_message+payload).json(),indent=1,sort_keys=True).split("\n")
             elif chosen_option_stripped == "POST":
                 headers = {'content-type': 'application/json'}
                 payload = {}
@@ -334,8 +336,6 @@ def edit_box():
 def post_navigator(keystroke):
     global last_key_pressed,post_request_body_boxes,selected_box,chosen_move_index,key_or_val_selector
     last_key_pressed = keystroke
-    with open("filename.txt","w") as f:
-        f.write(str(selected_box))
     if keystroke == CTRL_X:
         last_key_pressed = keystroke
         return 7
@@ -438,12 +438,18 @@ def add_key_value_pair_below():
 
 def setup():
     global last_key_pressed,box,INIT_CURSES,global_stdscr,chosen_option,TOP,LEFT,chosen_move_index,edit_box_message,PLUS_POS_Y
+    global start_index_response_data,end_index_response_data,NUM_COLS,POST_REQUEST_NUM_COLS
 
     while last_key_pressed!=CTRL_X:
         global_stdscr.clear()
         height, width = global_stdscr.getmaxyx()
         TOP = height // 5
         LEFT = width // 10
+
+        start_index_response_data = 0
+        end_index_response_data = height - 5
+        NUM_COLS = width // 3
+        POST_REQUEST_NUM_COLS = NUM_COLS
 
         setup_brand(global_stdscr)
         INIT_CURSES = LEFT + len(chosen_option) + 2
@@ -491,13 +497,8 @@ def setup():
 
 
 def draw_menu(stdscr):
-    global global_stdscr,start_index_response_data,end_index_response_data,NUM_COLS,POST_REQUEST_NUM_COLS
+    global global_stdscr
     global_stdscr = stdscr
-    height,width = stdscr.getmaxyx()
-    start_index_response_data = 0
-    end_index_response_data = height-5
-    NUM_COLS = width//3
-    POST_REQUEST_NUM_COLS = NUM_COLS
     setup()
 
 
