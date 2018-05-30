@@ -229,7 +229,7 @@ def navigator(keystroke):
     if keystroke==curses.KEY_BACKSPACE:
         edit_box_message = edit_box_message[:-1]
 
-    if chr(keystroke).lower() in string.ascii_lowercase or chr(keystroke) in ["/", ":", ".","?","=","&"]:
+    if chr(keystroke).lower() in string.ascii_lowercase or chr(keystroke).isdigit() or chr(keystroke) in ["/", ":", ".","?","=","&"]:
         edit_box_message+=chr(keystroke)
 
     if keystroke == curses.KEY_DOWN and (chosen_option[2:]=="POST" or chosen_option[2:] == "GET"):
@@ -268,7 +268,7 @@ def click_request():
                 payload = {}
                 for box in post_request_body_boxes:
                     if box["key"] != "" and box["value"] != "":
-                        payload[box["key"]] = box["value"]
+                        payload[box["key"]] = int(box["value"]) if box["value"].isdigit() else box["value"]
                 payload = urllib.parse.urlencode(payload)
                 if payload != "":
                     payload="?"+payload
@@ -278,7 +278,7 @@ def click_request():
                 payload = {}
                 for box in post_request_body_boxes:
                     if box["key"] != "" and box["value"]!="":
-                            payload[box["key"]] = box["value"]
+                            payload[box["key"]] = int(box["value"]) if box["value"].isdigit() else box["value"]
                 response_data = json.dumps(requests.post(edit_box_message, data=json.dumps(payload), headers=headers).json(),indent=1,sort_keys=True).split("\n")
             # elif chosen_option_stripped == "PATCH":
             #     response_data = json.dumps(requests.get(edit_box_message).json(),indent=1,sort_keys=True).split("\n")
@@ -286,7 +286,7 @@ def click_request():
             #     response_data = json.dumps(requests.get(edit_box_message).json(),indent=1,sort_keys=True).split("\n")
             format_data(response_data, height, width)
         except:
-            format_data(["There was an error processing the url..."],height, width)
+            format_data(["There was an error processing the url","or there was no data returned..."],height, width)
     else:
         format_data(response_data, height, width)
 
@@ -363,7 +363,7 @@ def post_navigator(keystroke):
 
     # could add ctrl_d to delete the cell for more user friendly experience
 
-    if chr(keystroke).lower() in string.ascii_lowercase:
+    if chr(keystroke).lower() in string.ascii_lowercase or chr(keystroke).isdigit():
         post_request_body_boxes[selected_box][key_or_val_selector]+=chr(keystroke)
         post_request_body_boxes[selected_box][key_or_val_selector + "_box"]["cursor"]+=1
 
